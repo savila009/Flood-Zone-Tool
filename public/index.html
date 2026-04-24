@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flood zone check (FEMA NFHL)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c1118;
+      --surface: #141c28;
+      --border: #243044;
+      --text: #e8edf5;
+      --muted: #8b9cb3;
+      --accent: #3d9cf0;
+      --yes: #f07178;
+      --no: #6ee7a8;
+      --warn: #e8c547;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #1a2840 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    main {
+      max-width: 32rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 3rem;
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0 0 1.75rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem 1.25rem 1.35rem;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    input[type="text"] {
+      flex: 1 1 12rem;
+      min-width: 0;
+      padding: 0.65rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0a0f15;
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+    }
+
+    input[type="text"]::placeholder {
+      color: #5a6a80;
+    }
+
+    input[type="text"]:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-color: #355a82;
+    }
+
+    button {
+      padding: 0.65rem 1.1rem;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(165deg, #4aa8ff, #2a7fd4);
+      color: #061018;
+      font-weight: 700;
+      font-size: 0.95rem;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      filter: brightness(1.06);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      filter: none;
+    }
+
+    .result {
+      margin-top: 1.25rem;
+      padding-top: 1.15rem;
+      border-top: 1px solid var(--border);
+      min-height: 4rem;
+    }
+
+    .answer {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 2.25rem;
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+    }
+
+    .answer.yes {
+      color: var(--yes);
+    }
+
+    .answer.no {
+      color: var(--no);
+    }
+
+    .answer.pending {
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .meta {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .meta strong {
+      color: #b8c5d9;
+      font-weight: 600;
+    }
+
+    .zones {
+      margin-top: 0.5rem;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      color: var(--warn);
+    }
+
+    .fineprint {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #5d6d82;
+      max-width: 36em;
+    }
+
+    .fineprint a {
+      color: var(--accent);
+    }
+
+    .file-banner {
+      margin: 0 auto 1.25rem;
+      max-width: 32rem;
+      padding: 0.9rem 1rem;
+      border-radius: 10px;
+      border: 1px solid #6b4a1a;
+      background: #241a0d;
+      color: #f0d9a8;
+      font-size: 0.88rem;
+    }
+
+    .file-banner code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.82rem;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.12rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    .help-list {
+      margin: 0.6rem 0 0;
+      padding-left: 1.15rem;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .help-list li {
+      margin: 0.25rem 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Is this address in a high-risk FEMA flood zone?</h1>
+    <p class="sub">
+      Uses the effective <strong>National Flood Hazard Layer</strong> (NFHL). “Yes” means a
+      <strong>Special Flood Hazard Area</strong> (SFHA)—the same high-risk 1% annual-chance zones used for NFIP purposes—not an official determination letter.
+    </p>
+
+    <div class="card">
+      <label for="addr">Street address (US)</label>
+      <div class="row">
+        <input
+          id="addr"
+          type="text"
+          autocomplete="street-address"
+          placeholder="e.g. 1600 Pennsylvania Ave NW, Washington, DC"
+        />
+        <button type="button" id="go">Check</button>
+      </div>
+
+      <div class="result" id="out" aria-live="polite">
+        <div class="answer pending">Enter an address and press Check.</div>
+      </div>
+    </div>
+
+    <p class="fineprint">
+      <strong>Easiest on Mac:</strong> double-click <code>Start.command</code> in this project folder (it opens the browser for you). Geocoding: OpenStreetMap Nominatim. Flood zones: FEMA
+      <a href="https://hazards.fema.gov/femaportal/resources/flood_map_svc.htm" target="_blank" rel="noopener">NFHL ArcGIS service</a>.
+      For insurance or lending, use an official flood determination. Address pin can differ slightly from a building footprint.
+    </p>
+  </main>
+
+  <script>
+    const addr = document.getElementById("addr");
+    const go = document.getElementById("go");
+    const out = document.getElementById("out");
+
+    const canReachApi =
+      location.protocol === "http:" || location.protocol === "https:";
+
+    if (location.protocol === "file:") {
+      const b = document.createElement("div");
+      b.className = "file-banner";
+      b.innerHTML =
+        "<strong>This page was opened as a file.</strong> The checker needs the small Python server so <code>/api/check</code> exists. " +
+        "In Terminal, <code>cd</code> to the “Flood Zone tool” folder, run <code>python3 serve.py</code>, then open " +
+        "<strong>http://127.0.0.1:3000/</strong> in your browser (do not double-click the HTML file).";
+      document.querySelector("main").insertAdjacentElement("afterbegin", b);
+    }
+
+    function render(html) {
+      out.innerHTML = html;
+    }
+
+    function networkHelpHtml() {
+      return (
+        '<div class="answer pending">Could not reach the app server.</div>' +
+        '<ul class="help-list">' +
+        "<li>If you opened <code>index.html</code> from the disk, use the URL from the yellow box above instead.</li>" +
+        "<li>In the <strong>Flood Zone tool</strong> folder, run <code>python3 serve.py</code> and keep that window open.</li>" +
+        "<li>Open <strong>http://127.0.0.1:3000/</strong> (if <code>localhost</code> fails, this IPv4 URL often fixes it).</li>" +
+        "</ul>"
+      );
+    }
+
+    async function check() {
+      const q = addr.value.trim();
+      if (!q) {
+        render('<div class="answer pending">Enter an address first.</div>');
+        return;
+      }
+
+      if (!canReachApi) {
+        render(networkHelpHtml());
+        return;
+      }
+
+      go.disabled = true;
+      render('<div class="answer pending">Checking…</div>');
+
+      try {
+        const r = await fetch("/api/check?address=" + encodeURIComponent(q));
+        const data = await r.json();
+
+        if (!data.ok) {
+          render('<div class="answer pending">' + escapeHtml(data.error || "Request failed.") + "</div>");
+          return;
+        }
+
+        if (data.answer === null) {
+          const msg = escapeHtml(data.message || "Could not determine.");
+          if (data.geocoded) {
+            render(
+              '<div class="answer pending" style="font-size:1.15rem">No NFHL match at this point</div>' +
+                '<div class="meta" style="margin-top:0.75rem">' +
+                msg +
+                "</div>"
+            );
+          } else {
+            render('<div class="answer pending">' + msg + "</div>");
+          }
+          return;
+        }
+
+        const cls = data.answer === "Yes" ? "yes" : "no";
+        let extra = "";
+        if (data.displayName) {
+          extra +=
+            '<div class="meta"><strong>Matched location</strong><br />' +
+            escapeHtml(data.displayName) +
+            "</div>";
+        }
+        if (data.zones && data.zones.length) {
+          extra += '<div class="zones">NFHL zone(s): ' + escapeHtml(data.zones.join(", ")) + "</div>";
+        }
+        if (data.message) {
+          extra += '<div class="meta">' + escapeHtml(data.message) + "</div>";
+        }
+
+        const headline =
+          data.answer === "Yes"
+            ? "In a FEMA Special Flood Hazard Area (SFHA)."
+            : "Not in a FEMA Special Flood Hazard Area (per NFHL).";
+
+        render(
+          '<div class="answer ' +
+            cls +
+            '">' +
+            escapeHtml(data.answer) +
+            "</div>" +
+            '<div class="meta">' +
+            escapeHtml(headline) +
+            "</div>" +
+            extra
+        );
+      } catch (e) {
+        render(networkHelpHtml());
+      } finally {
+        go.disabled = false;
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    go.addEventListener("click", check);
+    addr.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") check();
+    });
+  </script>
+</body>
+</html>
