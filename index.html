@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flood zone check (FEMA NFHL)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c1118;
+      --surface: #141c28;
+      --border: #243044;
+      --text: #e8edf5;
+      --muted: #8b9cb3;
+      --accent: #3d9cf0;
+      --yes: #f07178;
+      --no: #6ee7a8;
+      --warn: #e8c547;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #1a2840 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    main {
+      max-width: 32rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 3rem;
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0 0 1.75rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem 1.25rem 1.35rem;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .input-wrap {
+      position: relative;
+      flex: 1 1 12rem;
+      min-width: 0;
+    }
+
+    input[type="text"] {
+      flex: 1 1 12rem;
+      min-width: 0;
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0a0f15;
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+    }
+
+    input[type="text"]::placeholder {
+      color: #5a6a80;
+    }
+
+    input[type="text"]:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-color: #355a82;
+    }
+
+    button {
+      padding: 0.65rem 1.1rem;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(165deg, #4aa8ff, #2a7fd4);
+      color: #061018;
+      font-weight: 700;
+      font-size: 0.95rem;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      filter: brightness(1.06);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      filter: none;
+    }
+
+    .result {
+      margin-top: 1.25rem;
+      padding-top: 1.15rem;
+      border-top: 1px solid var(--border);
+      min-height: 4rem;
+    }
+
+    .answer {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 2.25rem;
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+    }
+
+    .answer.yes {
+      color: var(--yes);
+    }
+
+    .answer.no {
+      color: var(--no);
+    }
+
+    .answer.pending {
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .meta {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .meta strong {
+      color: #b8c5d9;
+      font-weight: 600;
+    }
+
+    .zones {
+      margin-top: 0.5rem;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      color: var(--warn);
+    }
+
+    .fineprint {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #5d6d82;
+      max-width: 36em;
+    }
+
+    .fineprint a {
+      color: var(--accent);
+    }
+
+    .hint-banner {
+      margin: 0 auto 1.25rem;
+      max-width: 32rem;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(61, 156, 240, 0.08);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .hint-banner code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.1rem 0.3rem;
+      border-radius: 4px;
+    }
+
+    .help-list {
+      margin: 0.6rem 0 0;
+      padding-left: 1.15rem;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .help-list li {
+      margin: 0.25rem 0;
+    }
+
+    .suggestions {
+      position: absolute;
+      top: calc(100% + 0.3rem);
+      left: 0;
+      right: 0;
+      max-height: 15rem;
+      overflow-y: auto;
+      z-index: 15;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #0d1521;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4);
+    }
+
+    .suggestions[hidden] {
+      display: none;
+    }
+
+    .suggestion-item {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 0;
+      padding: 0.62rem 0.75rem;
+      cursor: pointer;
+      color: var(--text);
+      background: transparent;
+      font: inherit;
+      font-size: 0.9rem;
+      line-height: 1.35;
+      white-space: normal;
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: 0;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item.active {
+      background: rgba(61, 156, 240, 0.2);
+    }
+
+    .suggestion-item mark {
+      color: #ffffff;
+      background: rgba(110, 231, 168, 0.25);
+      border-radius: 3px;
+      padding: 0.05rem 0.1rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Is this address in a high-risk FEMA flood zone?</h1>
+    <p class="sub">
+      Uses the effective <strong>National Flood Hazard Layer</strong> (NFHL). “Yes” means a
+      <strong>Special Flood Hazard Area</strong> (SFHA)—the same high-risk 1% annual-chance zones used for NFIP purposes—not an official determination letter.
+    </p>
+
+    <div id="gh-hint" class="hint-banner" hidden>
+      <strong>GitHub Pages:</strong> this site runs entirely in your browser (Nominatim + FEMA). No server required.
+      If you still see a site-wide 404, set Pages to publish the branch that contains <code>index.html</code> at the
+      <strong>site root</strong> (folder <code>/</code> or <code>/docs</code>—see comment in your repo’s Pages settings).
+    </div>
+
+    <div class="card">
+      <label for="addr">Street address (US)</label>
+      <div class="row">
+        <div class="input-wrap">
+          <input
+            id="addr"
+            type="text"
+            autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="addr-suggestions"
+            placeholder="e.g. 1600 Pennsylvania Ave NW, Washington, DC"
+          />
+          <div id="addr-suggestions" class="suggestions" role="listbox" hidden></div>
+        </div>
+        <button type="button" id="go">Check</button>
+      </div>
+
+      <div class="result" id="out" aria-live="polite">
+        <div class="answer pending">Enter an address and press Check.</div>
+      </div>
+    </div>
+
+    <p class="fineprint">
+      <strong>On your Mac (optional):</strong> <code>python3 serve.py</code> or double-click <code>Start.command</code> uses a local copy of the same checks.
+      Geocoding: OpenStreetMap Nominatim. Flood zones: FEMA
+      <a href="https://hazards.fema.gov/femaportal/resources/flood_map_svc.htm" target="_blank" rel="noopener">NFHL ArcGIS service</a>.
+      For insurance or lending, use an official flood determination. Address pin can differ slightly from a building footprint.
+    </p>
+  </main>
+
+  <script>
+    const addr = document.getElementById("addr");
+    const go = document.getElementById("go");
+    const out = document.getElementById("out");
+    const ghHint = document.getElementById("gh-hint");
+    const suggestionsEl = document.getElementById("addr-suggestions");
+
+    if (location.hostname.endsWith("github.io")) {
+      ghHint.hidden = false;
+    }
+
+    const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+    const PHOTON = "https://photon.komoot.io/api/";
+    const NFHL_QUERY =
+      "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query";
+    const AUTOCOMPLETE_DELAY_MS = 180;
+    const AUTOCOMPLETE_MIN_CHARS = 3;
+    const AUTOCOMPLETE_LIMIT = 6;
+    let suggestionItems = [];
+    let activeSuggestionIndex = -1;
+    let suggestionRequest = null;
+    let debounceTimer = null;
+
+    function wantsLocalApi() {
+      const h = (location.hostname || "").toLowerCase();
+      return h === "localhost" || h === "127.0.0.1" || h === "[::1]";
+    }
+
+    function render(html) {
+      out.innerHTML = html;
+    }
+
+    function stripUnitedStatesSuffix(text) {
+      return String(text || "")
+        .replace(/,\s*(united states( of america)?|usa|u\.s\.a\.|us|u\.s\.)\s*$/i, "")
+        .trim();
+    }
+
+    function isUsPhotonFeature(feature) {
+      const p = (feature && feature.properties) || {};
+      const countryCode = String(p.countrycode || "").toLowerCase();
+      const country = String(p.country || "").toLowerCase();
+      return countryCode === "us" || country === "united states" || country === "united states of america";
+    }
+
+    function formatNominatimSuggestion(item) {
+      const a = (item && item.address) || {};
+      const house = a.house_number ? a.house_number + " " : "";
+      const street = a.road || a.pedestrian || a.footway || a.path || "";
+      const city =
+        a.city || a.town || a.village || a.hamlet || a.municipality || a.suburb || "";
+      const state = a.state || a.state_code || "";
+      const zip = a.postcode || "";
+
+      const streetLine = (house + street).trim();
+      const localityLine = [city, state].filter(Boolean).join(", ");
+      const label = [streetLine, localityLine, zip].filter(Boolean).join(" ");
+
+      if (label.trim()) {
+        return stripUnitedStatesSuffix(label.trim());
+      }
+      return stripUnitedStatesSuffix((item && item.display_name) || "");
+    }
+
+    function closeSuggestions() {
+      suggestionsEl.hidden = true;
+      suggestionsEl.innerHTML = "";
+      suggestionItems = [];
+      activeSuggestionIndex = -1;
+      addr.setAttribute("aria-expanded", "false");
+      addr.removeAttribute("aria-activedescendant");
+    }
+
+    function renderSuggestions(query) {
+      if (!suggestionItems.length) {
+        closeSuggestions();
+        return;
+      }
+
+      const q = query.trim().toLowerCase();
+      suggestionsEl.innerHTML = suggestionItems
+        .map((item, index) => {
+          const id = "sugg-" + index;
+          const cls = index === activeSuggestionIndex ? "suggestion-item active" : "suggestion-item";
+          return (
+            '<button type="button" id="' +
+            id +
+            '" class="' +
+            cls +
+            '" role="option" aria-selected="' +
+            (index === activeSuggestionIndex ? "true" : "false") +
+            '" data-index="' +
+            index +
+            '">' +
+            highlightMatch(item.label, q) +
+            "</button>"
+          );
+        })
+        .join("");
+
+      suggestionsEl.hidden = false;
+      addr.setAttribute("aria-expanded", "true");
+      if (activeSuggestionIndex >= 0) {
+        addr.setAttribute("aria-activedescendant", "sugg-" + activeSuggestionIndex);
+      } else {
+        addr.removeAttribute("aria-activedescendant");
+      }
+    }
+
+    function highlightMatch(label, q) {
+      if (!q) return escapeHtml(label);
+      const lowLabel = label.toLowerCase();
+      const idx = lowLabel.indexOf(q.toLowerCase());
+      if (idx < 0) return escapeHtml(label);
+      const start = escapeHtml(label.slice(0, idx));
+      const mid = escapeHtml(label.slice(idx, idx + q.length));
+      const end = escapeHtml(label.slice(idx + q.length));
+      return start + "<mark>" + mid + "</mark>" + end;
+    }
+
+    function chooseSuggestion(index) {
+      const item = suggestionItems[index];
+      if (!item) return;
+      addr.value = item.label;
+      closeSuggestions();
+      addr.focus();
+    }
+
+    function setActiveSuggestion(index) {
+      if (!suggestionItems.length) return;
+      if (index < 0) index = suggestionItems.length - 1;
+      if (index >= suggestionItems.length) index = 0;
+      activeSuggestionIndex = index;
+      renderSuggestions(addr.value);
+    }
+
+    async function fetchSuggestions(query) {
+      if (query.trim().length < AUTOCOMPLETE_MIN_CHARS) {
+        closeSuggestions();
+        return;
+      }
+
+      if (suggestionRequest) {
+        suggestionRequest.abort();
+      }
+      suggestionRequest = new AbortController();
+
+      const params = new URLSearchParams({
+        format: "jsonv2",
+        limit: String(AUTOCOMPLETE_LIMIT),
+        countrycodes: "us",
+        addressdetails: "1",
+        q: query,
+      });
+
+      try {
+        const r = await fetch(NOMINATIM + "?" + params.toString(), {
+          headers: { Accept: "application/json" },
+          signal: suggestionRequest.signal,
+        });
+        if (!r.ok) {
+          throw new Error("Nominatim autocomplete unavailable");
+        }
+        const data = await r.json();
+        suggestionItems = (Array.isArray(data) ? data : [])
+          .map((item) => ({ label: formatNominatimSuggestion(item) }))
+          .filter((item) => item.label);
+        activeSuggestionIndex = -1;
+        renderSuggestions(query);
+      } catch (e) {
+        if (e.name === "AbortError") return;
+        try {
+          const altParams = new URLSearchParams({
+            q: query,
+            lang: "en",
+            limit: String(AUTOCOMPLETE_LIMIT),
+          });
+          const alt = await fetch(PHOTON + "?" + altParams.toString(), {
+            headers: { Accept: "application/json" },
+          });
+          if (!alt.ok) {
+            closeSuggestions();
+            return;
+          }
+          const altData = await alt.json();
+          suggestionItems = (Array.isArray(altData && altData.features) ? altData.features : [])
+            .filter(isUsPhotonFeature)
+            .map((f) => {
+              const p = f.properties || {};
+              const parts = [
+                p.housenumber && p.street ? p.housenumber + " " + p.street : p.street,
+                p.city || p.state,
+                p.postcode,
+              ].filter(Boolean);
+              return { label: stripUnitedStatesSuffix(parts.join(", ")) };
+            })
+            .filter((item) => item.label);
+          activeSuggestionIndex = -1;
+          renderSuggestions(query);
+        } catch (_altErr) {
+          closeSuggestions();
+        }
+      } finally {
+        suggestionRequest = null;
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function networkHelpHtml() {
+      return (
+        '<div class="answer pending">Could not load flood data.</div>' +
+        '<ul class="help-list">' +
+        "<li>Check your network connection.</li>" +
+        "<li>If you use a strict blocker, allow requests to <code>nominatim.openstreetmap.org</code> and <code>hazards.fema.gov</code>.</li>" +
+        "<li>On your Mac you can run <code>python3 serve.py</code> and open <code>http://127.0.0.1:3000/</code> instead.</li>" +
+        "</ul>"
+      );
+    }
+
+    function isInSfha(features) {
+      return (features || []).some((f) => f.attributes && f.attributes.SFHA_TF === "T");
+    }
+
+    async function geocodeWithPhoton(q) {
+      const params = new URLSearchParams({
+        q: q,
+        lang: "en",
+        limit: "1",
+      });
+      const r = await fetch(PHOTON + "?" + params.toString(), {
+        headers: { Accept: "application/json" },
+      });
+      if (!r.ok) {
+        throw new Error("Photon geocoding unavailable");
+      }
+      const data = await r.json();
+      const features = Array.isArray(data && data.features) ? data.features : [];
+      if (!features.length) {
+        return [];
+      }
+      return features.filter(isUsPhotonFeature).map((f) => {
+        const props = f.properties || {};
+        const coords = Array.isArray(f.geometry && f.geometry.coordinates)
+          ? f.geometry.coordinates
+          : [];
+        const lon = Number(coords[0]);
+        const lat = Number(coords[1]);
+        const parts = [
+          props.housenumber && props.street ? props.housenumber + " " + props.street : props.street,
+          props.city || props.state,
+          props.postcode,
+        ].filter(Boolean);
+        return {
+          display_name: stripUnitedStatesSuffix(parts.join(", ")),
+          lat: String(lat),
+          lon: String(lon),
+        };
+      });
+    }
+
+    async function checkInBrowser(q) {
+      const geoUrl =
+        NOMINATIM +
+        "?" +
+        new URLSearchParams({
+          format: "json",
+          limit: "1",
+          countrycodes: "us",
+          addressdetails: "1",
+          q,
+        }).toString();
+
+      let gr;
+      try {
+        gr = await fetch(geoUrl, { headers: { Accept: "application/json" } });
+      } catch (e) {
+        try {
+          const photonData = await geocodeWithPhoton(q);
+          gr = { ok: true, json: async () => photonData };
+        } catch (_fallbackErr) {
+          return { ok: false, error: "Could not reach geocoding. Check your connection." };
+        }
+      }
+
+      if (!gr.ok) {
+        return {
+          ok: false,
+          error: "Geocoding service returned an error. Try again in a moment.",
+        };
+      }
+
+      let geoData;
+      try {
+        geoData = await gr.json();
+      } catch (e) {
+        return { ok: false, error: "Unexpected response from geocoding." };
+      }
+
+      if (!Array.isArray(geoData) || geoData.length === 0) {
+        try {
+          geoData = await geocodeWithPhoton(q);
+        } catch (_fallbackErr) {
+          return {
+            ok: true,
+            geocoded: false,
+            answer: null,
+            message: "That address could not be located. Try adding city and state.",
+          };
+        }
+        if (!Array.isArray(geoData) || geoData.length === 0) {
+          return {
+            ok: true,
+            geocoded: false,
+            answer: null,
+            message: "That address could not be located. Try adding city and state.",
+          };
+        }
+      }
+
+      const place = geoData[0];
+      const lat = parseFloat(place.lat);
+      const lon = parseFloat(place.lon);
+      if (Number.isNaN(lat) || Number.isNaN(lon)) {
+        return {
+          ok: true,
+          geocoded: false,
+          answer: null,
+          message: "Invalid coordinates returned for that address.",
+        };
+      }
+
+      const femaParams = new URLSearchParams({
+        geometry: lon + "," + lat,
+        geometryType: "esriGeometryPoint",
+        inSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        outFields: "FLD_ZONE,SFHA_TF,ZONE_SUBTY",
+        returnGeometry: "false",
+        f: "json",
+      });
+
+      let fr;
+      try {
+        fr = await fetch(NFHL_QUERY + "?" + femaParams.toString());
+      } catch (e) {
+        return {
+          ok: false,
+          error: "Could not reach FEMA flood map service. Check your connection.",
+        };
+      }
+
+      if (!fr.ok) {
+        return {
+          ok: false,
+          error: "FEMA flood map service returned an error. Try again later.",
+        };
+      }
+
+      let femaData;
+      try {
+        femaData = await fr.json();
+      } catch (e) {
+        return { ok: false, error: "Unexpected response from FEMA map service." };
+      }
+
+      const features = femaData.features || [];
+      const displayName = place.display_name || "";
+
+      if (features.length === 0) {
+        return {
+          ok: true,
+          geocoded: true,
+          displayName: displayName,
+          lat: lat,
+          lon: lon,
+          inSfha: null,
+          answer: null,
+          zones: [],
+          message:
+            "No NFHL flood hazard polygon at this coordinate. The map may not " +
+            "cover this area yet, or there is a data gap—this is not a clean “No.” " +
+            "Try the official FEMA Map Service Center if you need certainty.",
+        };
+      }
+
+      const inSfha = isInSfha(features);
+      const zones = [
+        ...new Set(
+          features.map((f) => f.attributes && f.attributes.FLD_ZONE).filter(Boolean)
+        ),
+      ];
+
+      return {
+        ok: true,
+        geocoded: true,
+        displayName: displayName,
+        lat: lat,
+        lon: lon,
+        inSfha: inSfha,
+        answer: inSfha ? "Yes" : "No",
+        zones: zones,
+        message: inSfha
+          ? "FEMA’s National Flood Hazard Layer marks this location in a Special " +
+            "Flood Hazard Area (high-risk / 1% annual-chance floodplain)."
+          : "FEMA’s National Flood Hazard Layer shows this location outside the " +
+            "Special Flood Hazard Area for the effective map (e.g. Zone X or similar).",
+      };
+    }
+
+    async function fetchResult(q) {
+      if (wantsLocalApi()) {
+        try {
+          const r = await fetch("/api/check?address=" + encodeURIComponent(q));
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+          if (r.ok && ct.includes("application/json")) {
+            return await r.json();
+          }
+        } catch (e) {
+          /* fall through to browser */
+        }
+      }
+      return checkInBrowser(q);
+    }
+
+    async function check() {
+      const q = addr.value.trim();
+      if (!q) {
+        render('<div class="answer pending">Enter an address first.</div>');
+        return;
+      }
+
+      go.disabled = true;
+      render('<div class="answer pending">Checking…</div>');
+
+      try {
+        const data = await fetchResult(q);
+
+        if (!data.ok) {
+          render(
+            '<div class="answer pending">' +
+              escapeHtml(data.error || "Request failed.") +
+              "</div>"
+          );
+          return;
+        }
+
+        if (data.answer === null) {
+          const msg = escapeHtml(data.message || "Could not determine.");
+          if (data.geocoded) {
+            render(
+              '<div class="answer pending" style="font-size:1.15rem">No NFHL match at this point</div>' +
+                '<div class="meta" style="margin-top:0.75rem">' +
+                msg +
+                "</div>"
+            );
+          } else {
+            render('<div class="answer pending">' + msg + "</div>");
+          }
+          return;
+        }
+
+        const cls = data.answer === "Yes" ? "yes" : "no";
+        let extra = "";
+        if (data.displayName) {
+          extra +=
+            '<div class="meta"><strong>Matched location</strong><br />' +
+            escapeHtml(data.displayName) +
+            "</div>";
+        }
+        if (data.zones && data.zones.length) {
+          extra +=
+            '<div class="zones">NFHL zone(s): ' + escapeHtml(data.zones.join(", ")) + "</div>";
+        }
+        if (data.message) {
+          extra += '<div class="meta">' + escapeHtml(data.message) + "</div>";
+        }
+
+        const headline =
+          data.answer === "Yes"
+            ? "In a FEMA Special Flood Hazard Area (SFHA)."
+            : "Not in a FEMA Special Flood Hazard Area (per NFHL).";
+
+        render(
+          '<div class="answer ' +
+            cls +
+            '">' +
+            escapeHtml(data.answer) +
+            "</div>" +
+            '<div class="meta">' +
+            escapeHtml(headline) +
+            "</div>" +
+            extra
+        );
+      } catch (e) {
+        render(networkHelpHtml());
+      } finally {
+        go.disabled = false;
+      }
+    }
+
+    go.addEventListener("click", check);
+    addr.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" && suggestionItems.length) {
+        e.preventDefault();
+        setActiveSuggestion(activeSuggestionIndex + 1);
+        return;
+      }
+      if (e.key === "ArrowUp" && suggestionItems.length) {
+        e.preventDefault();
+        setActiveSuggestion(activeSuggestionIndex - 1);
+        return;
+      }
+      if (e.key === "Escape") {
+        closeSuggestions();
+        return;
+      }
+      if (e.key === "Enter") {
+        if (!suggestionsEl.hidden && activeSuggestionIndex >= 0) {
+          e.preventDefault();
+          chooseSuggestion(activeSuggestionIndex);
+          return;
+        }
+        check();
+      }
+    });
+
+    addr.addEventListener("input", () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        fetchSuggestions(addr.value.trim());
+      }, AUTOCOMPLETE_DELAY_MS);
+    });
+
+    suggestionsEl.addEventListener("mousedown", (e) => {
+      const target = e.target.closest(".suggestion-item");
+      if (!target) return;
+      e.preventDefault();
+      const index = Number(target.getAttribute("data-index"));
+      chooseSuggestion(index);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".input-wrap")) {
+        closeSuggestions();
+      }
+    });
+  </script>
+</body>
+</html>
