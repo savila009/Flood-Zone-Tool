@@ -16,6 +16,31 @@ NOMINATIM = "https://nominatim.openstreetmap.org/search"
 NFHL_QUERY = (
     "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query"
 )
+FEMA_SUPPORTED_COUNTRY_CODES = {"us"}
+
+
+def infer_place_country_code(place):
+    address = place.get("address", {}) if isinstance(place, dict) else {}
+    direct = str(
+        place.get("countryCode")
+        or address.get("country_code")
+        or address.get("countrycode")
+        or ""
+    ).lower()
+    if direct:
+        return direct
+
+    country = str(place.get("country") or address.get("country") or "").strip().lower()
+    if country in ("united states", "united states of america"):
+        return "us"
+    if country == "mexico":
+        return "mx"
+    return ""
+
+
+def infer_place_country_name(place):
+    address = place.get("address", {}) if isinstance(place, dict) else {}
+    return str(place.get("country") or address.get("country") or "").strip()
 
 
 def is_in_sfha(features):
@@ -51,7 +76,13 @@ class Handler(SimpleHTTPRequestHandler):
 
         try:
             geo_url = NOMINATIM + "?" + urllib.parse.urlencode(
-                {"format": "json", "limit": "1", "q": raw}
+                {
+                    "format": "json",
+                    "limit": "1",
+                    "addressdetails": "1",
+                    "countrycodes": "us,mx",
+                    "q": raw,
+                }
             )
             geo_data = http_get_json(
                 geo_url,
@@ -88,6 +119,30 @@ class Handler(SimpleHTTPRequestHandler):
                     "geocoded": False,
                     "answer": None,
                     "message": "Invalid coordinates returned for that address.",
+                },
+            )
+            return
+
+        place_country_code = infer_place_country_code(place)
+        place_country_name = infer_place_country_name(place)
+        if place_country_code and place_country_code not in FEMA_SUPPORTED_COUNTRY_CODES:
+            country_label = place_country_name or place_country_code.upper()
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "geocoded": True,
+                    "displayName": place.get("display_name", ""),
+                    "lat": lat,
+                    "lon": lon,
+                    "inSfha": None,
+                    "answer": None,
+                    "zones": [],
+                    "coverage": "fema-unavailable",
+                    "message": (
+                        "FEMA’s National Flood Hazard Layer is only available for U.S. locations. "
+                        f"This address appears to be in {country_label}."
+                    ),
                 },
             )
             return

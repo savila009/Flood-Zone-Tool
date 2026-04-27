@@ -326,6 +326,8 @@
     const PHOTON = "https://photon.komoot.io/api/";
     const NFHL_QUERY =
       "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query";
+    const ALLOWED_COUNTRY_CODES = new Set(["us", "mx"]);
+    const FEMA_SUPPORTED_COUNTRY_CODES = new Set(["us"]);
     const AUTOCOMPLETE_DELAY_MS = 180;
     const AUTOCOMPLETE_MIN_CHARS = 3;
     const AUTOCOMPLETE_LIMIT = 6;
@@ -349,11 +351,34 @@
         .trim();
     }
 
-    function isUsPhotonFeature(feature) {
+    function isAllowedPhotonFeature(feature) {
       const p = (feature && feature.properties) || {};
       const countryCode = String(p.countrycode || "").toLowerCase();
       const country = String(p.country || "").toLowerCase();
-      return countryCode === "us" || country === "united states" || country === "united states of america";
+      return (
+        ALLOWED_COUNTRY_CODES.has(countryCode) ||
+        country === "united states" ||
+        country === "united states of america" ||
+        country === "mexico"
+      );
+    }
+
+    function inferPlaceCountryCode(place) {
+      const a = (place && place.address) || {};
+      const direct = String(
+        (place && place.countryCode) || a.country_code || a.countrycode || ""
+      ).toLowerCase();
+      if (direct) return direct;
+
+      const country = String((place && place.country) || a.country || "").toLowerCase();
+      if (country === "united states" || country === "united states of america") return "us";
+      if (country === "mexico") return "mx";
+      return "";
+    }
+
+    function inferPlaceCountryName(place) {
+      const a = (place && place.address) || {};
+      return String((place && place.country) || a.country || "").trim();
     }
 
     function formatNominatimSuggestion(item) {
@@ -461,7 +486,7 @@
       const params = new URLSearchParams({
         format: "jsonv2",
         limit: String(AUTOCOMPLETE_LIMIT),
-        countrycodes: "us",
+        countrycodes: "us,mx",
         addressdetails: "1",
         q: query,
       });
@@ -497,7 +522,7 @@
           }
           const altData = await alt.json();
           suggestionItems = (Array.isArray(altData && altData.features) ? altData.features : [])
-            .filter(isUsPhotonFeature)
+            .filter(isAllowedPhotonFeature)
             .map((f) => {
               const p = f.properties || {};
               const parts = [
@@ -558,7 +583,7 @@
       if (!features.length) {
         return [];
       }
-      return features.filter(isUsPhotonFeature).map((f) => {
+      return features.filter(isAllowedPhotonFeature).map((f) => {
         const props = f.properties || {};
         const coords = Array.isArray(f.geometry && f.geometry.coordinates)
           ? f.geometry.coordinates
@@ -574,6 +599,8 @@
           display_name: stripUnitedStatesSuffix(parts.join(", ")),
           lat: String(lat),
           lon: String(lon),
+          countryCode: String(props.countrycode || "").toLowerCase(),
+          country: String(props.country || ""),
         };
       });
     }
@@ -585,7 +612,7 @@
         new URLSearchParams({
           format: "json",
           limit: "1",
-          countrycodes: "us",
+          countrycodes: "us,mx",
           addressdetails: "1",
           q,
         }).toString();
@@ -638,6 +665,9 @@
       }
 
       const place = geoData[0];
+      const displayName = place.display_name || "";
+      const placeCountryCode = inferPlaceCountryCode(place);
+      const placeCountryName = inferPlaceCountryName(place);
       const lat = parseFloat(place.lat);
       const lon = parseFloat(place.lon);
       if (Number.isNaN(lat) || Number.isNaN(lon)) {
@@ -646,6 +676,26 @@
           geocoded: false,
           answer: null,
           message: "Invalid coordinates returned for that address.",
+        };
+      }
+
+      if (placeCountryCode && !FEMA_SUPPORTED_COUNTRY_CODES.has(placeCountryCode)) {
+        const countryLabel = placeCountryName || placeCountryCode.toUpperCase();
+        return {
+          ok: true,
+          geocoded: true,
+          displayName: displayName,
+          lat: lat,
+          lon: lon,
+          inSfha: null,
+          answer: null,
+          zones: [],
+          coverage: "fema-unavailable",
+          message:
+            "FEMA’s National Flood Hazard Layer is only available for U.S. locations. " +
+            "This address appears to be in " +
+            countryLabel +
+            ".",
         };
       }
 
@@ -684,7 +734,6 @@
       }
 
       const features = femaData.features || [];
-      const displayName = place.display_name || "";
 
       if (features.length === 0) {
         return {
@@ -767,8 +816,20 @@
         if (data.answer === null) {
           const msg = escapeHtml(data.message || "Could not determine.");
           if (data.geocoded) {
+            const pendingTitle =
+              data.coverage === "fema-unavailable"
+                ? "FEMA flood maps are U.S.-only"
+                : "No NFHL match at this point";
+            const matchedLocation = data.displayName
+              ? '<div class="meta"><strong>Matched location</strong><br />' +
+                escapeHtml(data.displayName) +
+                "</div>"
+              : "";
             render(
-              '<div class="answer pending" style="font-size:1.15rem">No NFHL match at this point</div>' +
+              '<div class="answer pending" style="font-size:1.15rem">' +
+                escapeHtml(pendingTitle) +
+                "</div>" +
+                matchedLocation +
                 '<div class="meta" style="margin-top:0.75rem">' +
                 msg +
                 "</div>"
