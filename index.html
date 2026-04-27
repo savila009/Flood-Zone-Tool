@@ -274,7 +274,8 @@
     </p>
 
     <div id="gh-hint" class="hint-banner" hidden>
-      <strong>GitHub Pages:</strong> this site runs entirely in your browser (Nominatim + FEMA). No server required.
+      <strong>GitHub Pages:</strong> this site can run fully in your browser, but some regions may block direct FEMA calls.
+      If needed, point to a server proxy with <code>?api=https://your-host.example/api/check</code>.
       If you still see a site-wide 404, set Pages to publish the branch that contains <code>index.html</code> at the
       <strong>site root</strong> (folder <code>/</code> or <code>/docs</code>—see comment in your repo’s Pages settings).
     </div>
@@ -326,8 +327,7 @@
     const PHOTON = "https://photon.komoot.io/api/";
     const NFHL_QUERY =
       "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query";
-    const ALLOWED_COUNTRY_CODES = new Set(["us", "mx"]);
-    const FEMA_SUPPORTED_COUNTRY_CODES = new Set(["us"]);
+    const API_CHECK_PARAM = "api";
     const AUTOCOMPLETE_DELAY_MS = 180;
     const AUTOCOMPLETE_MIN_CHARS = 3;
     const AUTOCOMPLETE_LIMIT = 6;
@@ -351,34 +351,31 @@
         .trim();
     }
 
-    function isAllowedPhotonFeature(feature) {
+    function isUsPhotonFeature(feature) {
       const p = (feature && feature.properties) || {};
       const countryCode = String(p.countrycode || "").toLowerCase();
       const country = String(p.country || "").toLowerCase();
-      return (
-        ALLOWED_COUNTRY_CODES.has(countryCode) ||
-        country === "united states" ||
-        country === "united states of america" ||
-        country === "mexico"
-      );
+      return countryCode === "us" || country === "united states" || country === "united states of america";
     }
 
-    function inferPlaceCountryCode(place) {
-      const a = (place && place.address) || {};
-      const direct = String(
-        (place && place.countryCode) || a.country_code || a.countrycode || ""
-      ).toLowerCase();
-      if (direct) return direct;
-
-      const country = String((place && place.country) || a.country || "").toLowerCase();
-      if (country === "united states" || country === "united states of america") return "us";
-      if (country === "mexico") return "mx";
+    function apiCheckEndpoint() {
+      const qp = new URLSearchParams(location.search);
+      const configured = (qp.get(API_CHECK_PARAM) || "").trim();
+      if (configured) return configured;
+      if (wantsLocalApi()) return "/api/check";
       return "";
     }
 
-    function inferPlaceCountryName(place) {
-      const a = (place && place.address) || {};
-      return String((place && place.country) || a.country || "").trim();
+    function buildApiCheckUrl(query) {
+      const endpoint = apiCheckEndpoint();
+      if (!endpoint) return "";
+      try {
+        const u = new URL(endpoint, location.href);
+        u.searchParams.set("address", query);
+        return u.toString();
+      } catch (_e) {
+        return "";
+      }
     }
 
     function formatNominatimSuggestion(item) {
@@ -486,7 +483,7 @@
       const params = new URLSearchParams({
         format: "jsonv2",
         limit: String(AUTOCOMPLETE_LIMIT),
-        countrycodes: "us,mx",
+        countrycodes: "us",
         addressdetails: "1",
         q: query,
       });
@@ -522,7 +519,7 @@
           }
           const altData = await alt.json();
           suggestionItems = (Array.isArray(altData && altData.features) ? altData.features : [])
-            .filter(isAllowedPhotonFeature)
+            .filter(isUsPhotonFeature)
             .map((f) => {
               const p = f.properties || {};
               const parts = [
@@ -557,6 +554,7 @@
         '<ul class="help-list">' +
         "<li>Check your network connection.</li>" +
         "<li>If you use a strict blocker, allow requests to <code>nominatim.openstreetmap.org</code> and <code>hazards.fema.gov</code>.</li>" +
+        "<li>If FEMA is blocked from your IP region, use a server proxy endpoint and pass it as <code>?api=https://your-host.example/api/check</code>.</li>" +
         "<li>On your Mac you can run <code>python3 serve.py</code> and open <code>http://127.0.0.1:3000/</code> instead.</li>" +
         "</ul>"
       );
@@ -583,7 +581,7 @@
       if (!features.length) {
         return [];
       }
-      return features.filter(isAllowedPhotonFeature).map((f) => {
+      return features.filter(isUsPhotonFeature).map((f) => {
         const props = f.properties || {};
         const coords = Array.isArray(f.geometry && f.geometry.coordinates)
           ? f.geometry.coordinates
@@ -599,8 +597,6 @@
           display_name: stripUnitedStatesSuffix(parts.join(", ")),
           lat: String(lat),
           lon: String(lon),
-          countryCode: String(props.countrycode || "").toLowerCase(),
-          country: String(props.country || ""),
         };
       });
     }
@@ -612,7 +608,7 @@
         new URLSearchParams({
           format: "json",
           limit: "1",
-          countrycodes: "us,mx",
+          countrycodes: "us",
           addressdetails: "1",
           q,
         }).toString();
@@ -666,8 +662,6 @@
 
       const place = geoData[0];
       const displayName = place.display_name || "";
-      const placeCountryCode = inferPlaceCountryCode(place);
-      const placeCountryName = inferPlaceCountryName(place);
       const lat = parseFloat(place.lat);
       const lon = parseFloat(place.lon);
       if (Number.isNaN(lat) || Number.isNaN(lon)) {
@@ -676,26 +670,6 @@
           geocoded: false,
           answer: null,
           message: "Invalid coordinates returned for that address.",
-        };
-      }
-
-      if (placeCountryCode && !FEMA_SUPPORTED_COUNTRY_CODES.has(placeCountryCode)) {
-        const countryLabel = placeCountryName || placeCountryCode.toUpperCase();
-        return {
-          ok: true,
-          geocoded: true,
-          displayName: displayName,
-          lat: lat,
-          lon: lon,
-          inSfha: null,
-          answer: null,
-          zones: [],
-          coverage: "fema-unavailable",
-          message:
-            "FEMA’s National Flood Hazard Layer is only available for U.S. locations. " +
-            "This address appears to be in " +
-            countryLabel +
-            ".",
         };
       }
 
@@ -777,14 +751,15 @@
     }
 
     async function fetchResult(q) {
-      if (wantsLocalApi()) {
+      const apiUrl = buildApiCheckUrl(q);
+      if (apiUrl) {
         try {
-          const r = await fetch("/api/check?address=" + encodeURIComponent(q));
+          const r = await fetch(apiUrl);
           const ct = (r.headers.get("content-type") || "").toLowerCase();
           if (r.ok && ct.includes("application/json")) {
             return await r.json();
           }
-        } catch (e) {
+        } catch (_e) {
           /* fall through to browser */
         }
       }
@@ -816,10 +791,6 @@
         if (data.answer === null) {
           const msg = escapeHtml(data.message || "Could not determine.");
           if (data.geocoded) {
-            const pendingTitle =
-              data.coverage === "fema-unavailable"
-                ? "FEMA flood maps are U.S.-only"
-                : "No NFHL match at this point";
             const matchedLocation = data.displayName
               ? '<div class="meta"><strong>Matched location</strong><br />' +
                 escapeHtml(data.displayName) +
@@ -827,7 +798,7 @@
               : "";
             render(
               '<div class="answer pending" style="font-size:1.15rem">' +
-                escapeHtml(pendingTitle) +
+                "No NFHL match at this point" +
                 "</div>" +
                 matchedLocation +
                 '<div class="meta" style="margin-top:0.75rem">' +
