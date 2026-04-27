@@ -325,8 +325,11 @@
 
     const NOMINATIM = "https://nominatim.openstreetmap.org/search";
     const PHOTON = "https://photon.komoot.io/api/";
-    const NFHL_QUERY =
-      "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query";
+    const NFHL_QUERY_ENDPOINTS = [
+      "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query",
+      // Esri-hosted mirror view used as fallback when direct FEMA endpoint is region-blocked.
+      "https://services5.arcgis.com/7weheFjxuNkGGiZi/arcgis/rest/services/USA_Flood_Hazard_Areas_view/FeatureServer/0/query",
+    ];
     const API_CHECK_PARAM = "api";
     const AUTOCOMPLETE_DELAY_MS = 180;
     const AUTOCOMPLETE_MIN_CHARS = 3;
@@ -564,6 +567,53 @@
       return (features || []).some((f) => f.attributes && f.attributes.SFHA_TF === "T");
     }
 
+    async function queryNfhlFeatures(lon, lat) {
+      const params = new URLSearchParams({
+        geometry: lon + "," + lat,
+        geometryType: "esriGeometryPoint",
+        inSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        outFields: "FLD_ZONE,SFHA_TF,ZONE_SUBTY",
+        returnGeometry: "false",
+        f: "json",
+      });
+
+      const errors = [];
+      for (const endpoint of NFHL_QUERY_ENDPOINTS) {
+        let response;
+        try {
+          response = await fetch(endpoint + "?" + params.toString());
+        } catch (e) {
+          errors.push("Network error contacting " + endpoint);
+          continue;
+        }
+        if (!response.ok) {
+          errors.push("HTTP " + response.status + " from " + endpoint);
+          continue;
+        }
+
+        try {
+          const data = await response.json();
+          if (data && data.error) {
+            errors.push("Service error from " + endpoint);
+            continue;
+          }
+          return {
+            ok: true,
+            endpoint: endpoint,
+            features: data.features || [],
+          };
+        } catch (_jsonErr) {
+          errors.push("Invalid JSON from " + endpoint);
+        }
+      }
+
+      return {
+        ok: false,
+        errors: errors,
+      };
+    }
+
     async function geocodeWithPhoton(q) {
       const params = new URLSearchParams({
         q: q,
@@ -673,41 +723,17 @@
         };
       }
 
-      const femaParams = new URLSearchParams({
-        geometry: lon + "," + lat,
-        geometryType: "esriGeometryPoint",
-        inSR: "4326",
-        spatialRel: "esriSpatialRelIntersects",
-        outFields: "FLD_ZONE,SFHA_TF,ZONE_SUBTY",
-        returnGeometry: "false",
-        f: "json",
-      });
-
-      let fr;
-      try {
-        fr = await fetch(NFHL_QUERY + "?" + femaParams.toString());
-      } catch (e) {
+      const floodQuery = await queryNfhlFeatures(lon, lat);
+      if (!floodQuery.ok) {
         return {
           ok: false,
-          error: "Could not reach FEMA flood map service. Check your connection.",
+          error:
+            "Could not reach FEMA flood map services from this network. " +
+            "If you are outside the U.S., try a server proxy via ?api=...",
         };
       }
 
-      if (!fr.ok) {
-        return {
-          ok: false,
-          error: "FEMA flood map service returned an error. Try again later.",
-        };
-      }
-
-      let femaData;
-      try {
-        femaData = await fr.json();
-      } catch (e) {
-        return { ok: false, error: "Unexpected response from FEMA map service." };
-      }
-
-      const features = femaData.features || [];
+      const features = floodQuery.features || [];
 
       if (features.length === 0) {
         return {

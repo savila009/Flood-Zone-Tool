@@ -13,9 +13,10 @@ PORT = int(os.environ.get("PORT", "3000"))
 PUBLIC_DIR = os.path.dirname(os.path.abspath(__file__))
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
-NFHL_QUERY = (
-    "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query"
-)
+FEMA_QUERY_ENDPOINTS = [
+    "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query",
+    "https://services5.arcgis.com/7weheFjxuNkGGiZi/arcgis/rest/services/USA_Flood_Hazard_Areas_view/FeatureServer/0/query",
+]
 
 
 def is_in_sfha(features):
@@ -108,14 +109,29 @@ class Handler(SimpleHTTPRequestHandler):
                 "f": "json",
             }
         )
-        fema_url = NFHL_QUERY + "?" + fema_params
+        fema_data = None
+        endpoint_errors = []
+        for endpoint in FEMA_QUERY_ENDPOINTS:
+            fema_url = endpoint + "?" + fema_params
+            try:
+                data = http_get_json(fema_url)
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+                endpoint_errors.append(f"{endpoint}: {e}")
+                continue
+            if isinstance(data, dict) and data.get("error"):
+                endpoint_errors.append(f"{endpoint}: {data['error']}")
+                continue
+            fema_data = data
+            break
 
-        try:
-            fema_data = http_get_json(fema_url)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        if fema_data is None:
             self._json(
                 502,
-                {"ok": False, "error": f"FEMA flood map service unavailable: {e}"},
+                {
+                    "ok": False,
+                    "error": "FEMA flood map service unavailable from all endpoints.",
+                    "details": endpoint_errors,
+                },
             )
             return
 
