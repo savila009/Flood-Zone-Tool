@@ -43,6 +43,14 @@ class Handler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
+
     def _api_check(self, parsed):
         qs = urllib.parse.parse_qs(parsed.query)
         raw = (qs.get("address") or [""])[0].strip()
@@ -188,6 +196,9 @@ class Handler(SimpleHTTPRequestHandler):
     def _json(self, status, body):
         data = json.dumps(body).encode("utf-8")
         self.send_response(status)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

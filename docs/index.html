@@ -274,8 +274,8 @@
     </p>
 
     <div id="gh-hint" class="hint-banner" hidden>
-      <strong>GitHub Pages:</strong> this site can run fully in your browser, but some regions may block direct FEMA calls.
-      If needed, point to a server proxy with <code>?api=https://your-host.example/api/check</code>.
+      <strong>GitHub Pages:</strong> this deployment requires a server proxy endpoint for flood checks.
+      Use <code>?api=https://your-host.example/api/check</code>.
       If you still see a site-wide 404, set Pages to publish the branch that contains <code>index.html</code> at the
       <strong>site root</strong> (folder <code>/</code> or <code>/docs</code>—see comment in your repo’s Pages settings).
     </div>
@@ -556,8 +556,8 @@
         '<div class="answer pending">Could not load flood data.</div>' +
         '<ul class="help-list">' +
         "<li>Check your network connection.</li>" +
-        "<li>If you use a strict blocker, allow requests to <code>nominatim.openstreetmap.org</code> and <code>hazards.fema.gov</code>.</li>" +
-        "<li>If FEMA is blocked from your IP region, use a server proxy endpoint and pass it as <code>?api=https://your-host.example/api/check</code>.</li>" +
+        "<li>If you use a strict blocker, allow requests to <code>nominatim.openstreetmap.org</code>.</li>" +
+        "<li>This production page requires a server proxy endpoint: <code>?api=https://your-host.example/api/check</code>.</li>" +
         "<li>On your Mac you can run <code>python3 serve.py</code> and open <code>http://127.0.0.1:3000/</code> instead.</li>" +
         "</ul>"
       );
@@ -785,9 +785,25 @@
           if (r.ok && ct.includes("application/json")) {
             return await r.json();
           }
+          return {
+            ok: false,
+            error:
+              "Flood-check API returned an invalid response. Confirm your ?api endpoint is reachable and returns JSON.",
+          };
         } catch (_e) {
-          /* fall through to browser */
+          return {
+            ok: false,
+            error:
+              "Could not reach the configured flood-check API endpoint. Confirm your ?api URL and CORS settings.",
+          };
         }
+      }
+      if (!wantsLocalApi()) {
+        return {
+          ok: false,
+          error:
+            "This deployment requires a server flood-check API endpoint. Use ?api=https://your-host.example/api/check.",
+        };
       }
       return checkInBrowser(q);
     }
