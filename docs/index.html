@@ -274,7 +274,8 @@
     </p>
 
     <div id="gh-hint" class="hint-banner" hidden>
-      <strong>GitHub Pages:</strong> this site runs entirely in your browser (Nominatim + FEMA). No server required.
+      <strong>GitHub Pages:</strong> this deployment requires a server proxy endpoint for flood checks.
+      Use <code>?api=https://your-host.example/api/check</code>.
       If you still see a site-wide 404, set Pages to publish the branch that contains <code>index.html</code> at the
       <strong>site root</strong> (folder <code>/</code> or <code>/docs</code>—see comment in your repo’s Pages settings).
     </div>
@@ -324,8 +325,12 @@
 
     const NOMINATIM = "https://nominatim.openstreetmap.org/search";
     const PHOTON = "https://photon.komoot.io/api/";
-    const NFHL_QUERY =
-      "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query";
+    const NFHL_QUERY_ENDPOINTS = [
+      "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query",
+      // Esri-hosted mirror view used as fallback when direct FEMA endpoint is region-blocked.
+      "https://services5.arcgis.com/7weheFjxuNkGGiZi/arcgis/rest/services/USA_Flood_Hazard_Areas_view/FeatureServer/0/query",
+    ];
+    const API_CHECK_PARAM = "api";
     const AUTOCOMPLETE_DELAY_MS = 180;
     const AUTOCOMPLETE_MIN_CHARS = 3;
     const AUTOCOMPLETE_LIMIT = 6;
@@ -354,6 +359,25 @@
       const countryCode = String(p.countrycode || "").toLowerCase();
       const country = String(p.country || "").toLowerCase();
       return countryCode === "us" || country === "united states" || country === "united states of america";
+    }
+
+    function apiCheckEndpoint() {
+      const qp = new URLSearchParams(location.search);
+      const configured = (qp.get(API_CHECK_PARAM) || "").trim();
+      if (configured) return configured;
+      return "/api/check";
+    }
+
+    function buildApiCheckUrl(query) {
+      const endpoint = apiCheckEndpoint();
+      if (!endpoint) return "";
+      try {
+        const u = new URL(endpoint, location.href);
+        u.searchParams.set("address", query);
+        return u.toString();
+      } catch (_e) {
+        return "";
+      }
     }
 
     function formatNominatimSuggestion(item) {
@@ -531,7 +555,8 @@
         '<div class="answer pending">Could not load flood data.</div>' +
         '<ul class="help-list">' +
         "<li>Check your network connection.</li>" +
-        "<li>If you use a strict blocker, allow requests to <code>nominatim.openstreetmap.org</code> and <code>hazards.fema.gov</code>.</li>" +
+        "<li>If you use a strict blocker, allow requests to <code>nominatim.openstreetmap.org</code>.</li>" +
+        "<li>This production page requires a server proxy endpoint: <code>?api=https://your-host.example/api/check</code>.</li>" +
         "<li>On your Mac you can run <code>python3 serve.py</code> and open <code>http://127.0.0.1:3000/</code> instead.</li>" +
         "</ul>"
       );
@@ -539,6 +564,53 @@
 
     function isInSfha(features) {
       return (features || []).some((f) => f.attributes && f.attributes.SFHA_TF === "T");
+    }
+
+    async function queryNfhlFeatures(lon, lat) {
+      const params = new URLSearchParams({
+        geometry: lon + "," + lat,
+        geometryType: "esriGeometryPoint",
+        inSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        outFields: "FLD_ZONE,SFHA_TF,ZONE_SUBTY",
+        returnGeometry: "false",
+        f: "json",
+      });
+
+      const errors = [];
+      for (const endpoint of NFHL_QUERY_ENDPOINTS) {
+        let response;
+        try {
+          response = await fetch(endpoint + "?" + params.toString());
+        } catch (e) {
+          errors.push("Network error contacting " + endpoint);
+          continue;
+        }
+        if (!response.ok) {
+          errors.push("HTTP " + response.status + " from " + endpoint);
+          continue;
+        }
+
+        try {
+          const data = await response.json();
+          if (data && data.error) {
+            errors.push("Service error from " + endpoint);
+            continue;
+          }
+          return {
+            ok: true,
+            endpoint: endpoint,
+            features: data.features || [],
+          };
+        } catch (_jsonErr) {
+          errors.push("Invalid JSON from " + endpoint);
+        }
+      }
+
+      return {
+        ok: false,
+        errors: errors,
+      };
     }
 
     async function geocodeWithPhoton(q) {
@@ -638,6 +710,7 @@
       }
 
       const place = geoData[0];
+      const displayName = place.display_name || "";
       const lat = parseFloat(place.lat);
       const lon = parseFloat(place.lon);
       if (Number.isNaN(lat) || Number.isNaN(lon)) {
@@ -649,42 +722,17 @@
         };
       }
 
-      const femaParams = new URLSearchParams({
-        geometry: lon + "," + lat,
-        geometryType: "esriGeometryPoint",
-        inSR: "4326",
-        spatialRel: "esriSpatialRelIntersects",
-        outFields: "FLD_ZONE,SFHA_TF,ZONE_SUBTY",
-        returnGeometry: "false",
-        f: "json",
-      });
-
-      let fr;
-      try {
-        fr = await fetch(NFHL_QUERY + "?" + femaParams.toString());
-      } catch (e) {
+      const floodQuery = await queryNfhlFeatures(lon, lat);
+      if (!floodQuery.ok) {
         return {
           ok: false,
-          error: "Could not reach FEMA flood map service. Check your connection.",
+          error:
+            "Could not reach FEMA flood map services from this network. " +
+            "If you are outside the U.S., try a server proxy via ?api=...",
         };
       }
 
-      if (!fr.ok) {
-        return {
-          ok: false,
-          error: "FEMA flood map service returned an error. Try again later.",
-        };
-      }
-
-      let femaData;
-      try {
-        femaData = await fr.json();
-      } catch (e) {
-        return { ok: false, error: "Unexpected response from FEMA map service." };
-      }
-
-      const features = femaData.features || [];
-      const displayName = place.display_name || "";
+      const features = floodQuery.features || [];
 
       if (features.length === 0) {
         return {
@@ -728,16 +776,33 @@
     }
 
     async function fetchResult(q) {
-      if (wantsLocalApi()) {
+      const apiUrl = buildApiCheckUrl(q);
+      if (apiUrl) {
         try {
-          const r = await fetch("/api/check?address=" + encodeURIComponent(q));
+          const r = await fetch(apiUrl);
           const ct = (r.headers.get("content-type") || "").toLowerCase();
           if (r.ok && ct.includes("application/json")) {
             return await r.json();
           }
-        } catch (e) {
-          /* fall through to browser */
+          return {
+            ok: false,
+            error:
+              "Flood-check API returned an invalid response. Confirm your ?api endpoint is reachable and returns JSON.",
+          };
+        } catch (_e) {
+          return {
+            ok: false,
+            error:
+              "Could not reach the configured flood-check API endpoint. Confirm your ?api URL and CORS settings.",
+          };
         }
+      }
+      if (!wantsLocalApi()) {
+        return {
+          ok: false,
+          error:
+            "Could not reach /api/check on this host. Configure a proxy endpoint with ?api=https://your-host.example/api/check.",
+        };
       }
       return checkInBrowser(q);
     }
@@ -767,8 +832,16 @@
         if (data.answer === null) {
           const msg = escapeHtml(data.message || "Could not determine.");
           if (data.geocoded) {
+            const matchedLocation = data.displayName
+              ? '<div class="meta"><strong>Matched location</strong><br />' +
+                escapeHtml(data.displayName) +
+                "</div>"
+              : "";
             render(
-              '<div class="answer pending" style="font-size:1.15rem">No NFHL match at this point</div>' +
+              '<div class="answer pending" style="font-size:1.15rem">' +
+                "No NFHL match at this point" +
+                "</div>" +
+                matchedLocation +
                 '<div class="meta" style="margin-top:0.75rem">' +
                 msg +
                 "</div>"
