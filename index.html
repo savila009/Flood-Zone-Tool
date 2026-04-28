@@ -365,8 +365,7 @@
       const qp = new URLSearchParams(location.search);
       const configured = (qp.get(API_CHECK_PARAM) || "").trim();
       if (configured) return configured;
-      if (wantsLocalApi()) return "/api/check";
-      return "";
+      return "/api/check";
     }
 
     function buildApiCheckUrl(query) {
@@ -802,7 +801,7 @@
         return {
           ok: false,
           error:
-            "This deployment requires a server flood-check API endpoint. Use ?api=https://your-host.example/api/check.",
+            "Could not reach /api/check on this host. Configure a proxy endpoint with ?api=https://your-host.example/api/check.",
         };
       }
       return checkInBrowser(q);
